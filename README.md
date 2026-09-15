@@ -43,7 +43,5 @@ When you run the script, it generates a visualization (`fea_result.png`) showing
 1. The learning curve of the ML algorithm completely bypassing the traditional baseline.
 2. A geometric plot of the FEA frame, the clamped throat nodes, and the string map.
 
-![FEA Result](fea_result.png)
-
 ---
 *Built with Python, Structural Mechanics, and a mild obsession with over-engineering sports equipment.*
