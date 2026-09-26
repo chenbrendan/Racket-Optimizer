@@ -1,47 +1,51 @@
-# 🏸 RacketFEA: The Machine Learning Stringer
+# RacketFEA: Stringing Sequence Optimizer
 
-Welcome to a ridiculously deep dive into a very niche intersection: **Racket Sports + Structural Engineering + Machine Learning**.
+RacketFEA compares the frame response during different racket stringing orders. It models a racket frame with planar finite elements, evaluates the frame after each string is installed, and searches for a feasible order with a lower weighted deformation and bending score.
 
-Have you ever wondered if the standard way we string tennis and badminton rackets is *actually* the best way to protect the frame? (Spoiler: It's not).
+This is a simplified comparison model. Its results are not a validated recommendation for stringing a real racket.
 
-## 🎾 What is this?
-This repository contains a physically-grounded racket stringing-order optimizer. It models a racket frame using Finite Element Analysis (FEA) and uses a combinatorial search algorithm (Simulated Annealing) to find the exact sequence of stringing that minimizes structural warping and transient stress on the frame.
+## Model and search
 
-## 💥 The Problem with "Folk Wisdom"
-For decades, professional stringers have used a traditional "center-out" alternating method. The logic makes sense on the surface: it keeps the frame visually balanced. 
+- The default frame is an ellipse made of 120 two-dimensional Euler-Bernoulli beam elements. Each node has two translations and one rotation.
+- The default string pattern has 16 mains and 18 crosses, each prescribed at 100 N.
+- The default mount has six support points represented by radial springs, plus constraints to remove rigid-body motion. A throat-clamp option is also available.
+- The fast search solves the frame response to each string separately. Linear superposition then gives the intermediate frame state after each successive pull.
+- The baseline strings the mains center-out, followed by the crosses center-out. Feasible candidates finish all mains before crosses, progress outward on each side, and use no more than two consecutive strings on the same side.
+- Simulated annealing searches by swapping adjacent strings within those constraints. The default run uses 3,000 iterations per restart and four restarts. The search finds an improved candidate when available; it does not prove global optimality.
 
-But there's a structural catch. Pulling a main (vertical) string shifts the stress right where a nearby cross (horizontal) string attaches. Traditional heuristics treat mains and crosses as completely separate sequences, ignoring this physical coupling effect! 
+The objective is a weighted sum of six metrics measured across the intermediate stringing states: peak nodal displacement, peak beam-end bending moment, peak ovalization, peak asymmetry, peak transient shape change, and average peak displacement across stages (deformation exposure). Each metric is normalized against the fully strung frame response calculated by the model. The weights encode a modeling choice, not measured damage thresholds.
 
-When we calculate the **peak nodal displacement** (how much the racket literally bows out of shape mid-stringing before the opposing strings lock it back into place), the results are eye-opening:
+With prescribed string forces and linear frame stiffness, the final frame state is independent of stringing order. The search compares **intermediate states**.
 
-*   **Random Sequence:** `~0.000002 m`
-*   **Traditional 'Center-Out':** `~0.000012 m` 🚨 *(Surprisingly, the worst!)*
-*   **ML Search-Optimized:** `~0.000002 m` 🏆 *(The mathematically optimal route)*
+## Run it
 
-## 🧠 How the Code Works
-1. **The Physics (FEA Proxy):** The frame is modeled as a closed loop of 60 2D beam elements with real bending and axial stiffness. It's rigidly clamped at the throat—exactly like it sits in a real stringing machine.
-2. **Superposition Magic:** Running a full FEA solve for *every single permutation* of string pulls would take centuries. Instead, we solve the frame FEA **once** per string at unit tension to build an **Influence Matrix**. Because the frame is linear-elastic, evaluating any sequence of strings becomes simple, lightning-fast vector addition.
-3. **The Search:** We throw Simulated Annealing at the problem. The algorithm randomly swaps string orders thousands of times, steadily cooling down to lock into a sequence that interleaves mains and crosses perfectly, keeping peak frame distortion as close to zero as physically possible.
+Use Python with NumPy and Matplotlib:
 
-## 🚀 Getting Started
-
-### Prerequisites
-You'll need Python and a couple of standard scientific libraries:
 ```bash
-pip install numpy matplotlib
-```
-
-### Running the Optimizer
-Clone the repo and run the main script:
-```bash
+python -m pip install numpy matplotlib
 python racket_fea.py
 ```
-*(Note: By default, the script generates an image file. If you want the graphs to pop up on your screen interactively, remove `matplotlib.use("Agg")` from the imports and change `plt.savefig(...)` to `plt.show()` at the bottom of the script!)*
 
-## 📊 Visualizing the Output
-When you run the script, it generates a visualization (`fea_result.png`) showing:
-1. The learning curve of the ML algorithm completely bypassing the traditional baseline.
-2. A geometric plot of the FEA frame, the clamped throat nodes, and the string map.
+The script prints the baseline and best-found scores, selected deformation metrics, percentage improvement, and the best sequence as **zero-based string indices**. Indices 0–15 are mains and 16–33 are crosses with the default pattern, in the order the strings are created from negative to positive coordinates.
 
----
-*Built with Python, Structural Mechanics, and a mild obsession with over-engineering sports equipment.*
+It also saves `fea_result.png`. The left plot shows the best score found during the search against the baseline; the right plot shows the **undeformed** frame, string layout, and support locations. The plot is saved even if `--show` is specified.
+
+Useful options:
+
+```bash
+python racket_fea.py --help
+python racket_fea.py --elastic-check
+python racket_fea.py --nodes 120 --mains 16 --crosses 18 --tension 100 --iterations 3000 --restarts 4 --seed 7 --support six_point --plot fea_result.png
+```
+
+Use `--support throat_clamp` to switch mount models. The optional `--elastic-check` evaluates the **best-found sequence after the search**, treating installed strings as axial springs and printing the final modeled tension range. It does not change the optimizer's objective or search.
+
+Run the included tests with:
+
+```bash
+python -m unittest test_racket_fea.py
+```
+
+## Interpretation and limits
+
+The ellipse, uniform beam properties, idealized string attachments, mount, and objective weights are assumptions. A real composite racket has varying geometry and material behavior, as well as effects such as contact, grommet friction, and tension loss that this model does not calibrate. Compare candidate orders **within these assumptions**; do not interpret a small score difference as proof of a physical performance or durability benefit.
